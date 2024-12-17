@@ -1,6 +1,6 @@
 import aoc
+import heapq
 
-import sys
 from typing import Tuple, Set, NamedTuple, Dict, List
 
 grid = aoc.getCellsForDay(16)
@@ -9,8 +9,6 @@ grid = aoc.getCellsForDay(16)
 # grid = aoc.getCellsForDay(16, force_filepath="inputs/day16_other_zigzag.txt")
 # grid = aoc.getCellsForDay(16, force_filepath="inputs/day16_other_open_maze.txt")
 
-## Let's go
-sys.setrecursionlimit(15000)
 
 Coord = Tuple[int, int]
 
@@ -29,8 +27,6 @@ DIRECTIONS = {
 class State(NamedTuple):
     coord: Coord
     direction: Direction
-    score: int
-    pathBefore: List[Coord]
 
 
 walls: Set[Coord] = set()
@@ -76,108 +72,113 @@ def turnLeft(direction: Direction) -> Direction:
 bestKnownScore: Dict[Coord, int] = dict()
 
 
-def getMinPathFor(walls: Set[Coord], end: Coord, state: State) -> int:
-    # print(state)
-    if state.coord in bestKnownScore and state.score >= bestKnownScore[state.coord]:
-        return -1
-    bestKnownScore[state.coord] = state.score
+def getMinPathFor(
+    walls: Set[Coord], end: Coord, startState: State
+) -> Tuple[int, Dict[State, Set[State]]]:
+    # Do a Dijkstra
+    # Return both the minimal path length and the dictionaries of previous nodes to reconstruct
+    # multiple best paths
 
-    nextCoord: Coord = (
-        state.coord[0] + state.direction[0],
-        state.coord[1] + state.direction[1],
-    )
+    minDistanceKnown: Dict[State, int] = dict()
+    bestPathComesFrom: Dict[State, Set[State]] = dict()
 
-    if nextCoord == end:
-        finalScore = state.score + 1
-        if end not in bestKnownScore or bestKnownScore[end] > finalScore:
-            bestKnownScore[end] = finalScore
+    to_visit: List[Tuple[int, State]] = []
+    heapq.heappush(to_visit, (0, startState))
 
-        print("Found path")
-        print(getPathRepr(state))
-        print("score", finalScore)
-        print("==")
+    while len(to_visit) > 0:
+        nextBest = heapq.heappop(to_visit)
+        currentDist, currentState = nextBest
 
-        return 1
+        if currentState.coord == end:
+            return (currentDist, bestPathComesFrom)
 
-    goStraightScore: int = -1
-    if nextCoord not in walls:
-        goStraightScore = getMinPathFor(
-            walls,
-            end,
-            State(
-                nextCoord,
-                state.direction,
-                1 + state.score,
-                state.pathBefore + [state.coord],
-            ),
+        # Explore other states
+        candidatesNextAndDistance: List[Tuple[State, int]] = []
+
+        # go straight
+        straightCoord = (
+            currentState.coord[0] + currentState.direction[0],
+            currentState.coord[1] + currentState.direction[1],
         )
+        if straightCoord not in walls:
+            candidatesNextAndDistance.append(
+                (
+                    State(
+                        straightCoord,
+                        currentState.direction,
+                    ),
+                    currentDist + 1,
+                )
+            )
 
-    turnRightScore: int = -1
-    rightDir: Direction = turnRight(state.direction)
-    rightCoord: Coord = (
-        state.coord[0] + rightDir[0],
-        state.coord[1] + rightDir[1],
-    )
-    if rightCoord not in walls:
-        turnRightScore = getMinPathFor(
-            walls,
-            end,
-            State(
-                rightCoord,
-                rightDir,
-                1001 + state.score,
-                state.pathBefore + [state.coord],
-            ),
+        # turn right if cell to the right is not a wall
+        rightDirection: Direction = turnRight(currentState.direction)
+        rightCoord = (
+            currentState.coord[0] + rightDirection[0],
+            currentState.coord[1] + rightDirection[1],
         )
+        if rightCoord not in walls:
+            candidatesNextAndDistance.append(
+                (
+                    State(
+                        currentState.coord,
+                        rightDirection,
+                    ),
+                    currentDist + 1000,
+                )
+            )
 
-    turnLeftScore: int = -1
-    leftDir: Direction = turnLeft(state.direction)
-    leftCoord: Coord = (state.coord[0] + leftDir[0], state.coord[1] + leftDir[1])
-    if leftCoord not in walls:
-        turnLeftScore = getMinPathFor(
-            walls,
-            end,
-            State(
-                leftCoord, leftDir, 1001 + state.score, state.pathBefore + [state.coord]
-            ),
+        # turn left if cell to the left is not a wall
+        leftDirection: Direction = turnLeft(currentState.direction)
+        leftCoord = (
+            currentState.coord[0] + leftDirection[0],
+            currentState.coord[1] + leftDirection[1],
         )
+        if leftCoord not in walls:
+            candidatesNextAndDistance.append(
+                (
+                    State(
+                        currentState.coord,
+                        leftDirection,
+                    ),
+                    currentDist + 1000,
+                )
+            )
 
-    if goStraightScore == turnRightScore == turnLeftScore == -1:
-        return -1
+        for nextState, nextDist in candidatesNextAndDistance:
+            if (
+                nextState not in minDistanceKnown
+                or nextDist < minDistanceKnown[nextState]
+            ):
+                minDistanceKnown[nextState] = nextDist
+                bestPathComesFrom[nextState] = set([currentState])
+                heapq.heappush(to_visit, (nextDist, nextState))
 
-    minScore = min(
-        s for s in (goStraightScore, turnRightScore, turnLeftScore) if s > -1
-    )
+            elif nextDist == minDistanceKnown[nextState]:
+                bestPathComesFrom[nextState].add(currentState)
 
-    if minScore == goStraightScore:
-        return 1 + minScore
-    if minScore == turnRightScore or minScore == turnLeftScore:
-        return 1001 + minScore
-
-    raise Exception(
-        "Unexpected state", goStraightScore, turnRightScore, turnLeftScore, minScore
-    )
-
-
-def getPathRepr(state: State) -> str:
-    pathStr = ""
-    for y in range(len(grid)):
-        for x in range(len(grid[y])):
-            if (x, y) in walls:
-                pathStr += "#"
-            elif (x, y) == state.coord:
-                pathStr += "@"
-            elif (x, y) in state.pathBefore:
-                pathStr += "O"
-            else:
-                pathStr += "."
-        pathStr += "\n"
-
-    return pathStr
+    raise Exception("No path to end found")
 
 
-# 73408 too high
-print(
-    "Part 1", getMinPathFor(walls, endCoord, State(startCoord, initialDirection, 0, []))
+bestLength, bestPreviousNodes = getMinPathFor(
+    walls, endCoord, State(startCoord, initialDirection)
 )
-print("best known", bestKnownScore[endCoord])
+
+print("Part 1", bestLength)
+
+# Reconstruct all best paths with a floodfill from the end
+visited: Set[State] = set()
+to_visit: Set[State] = set()
+
+to_visit.update([state for state in bestPreviousNodes if state.coord == endCoord])
+
+while len(to_visit) > 0:
+    state = to_visit.pop()
+    visited.add(state)
+
+    assert state in bestPreviousNodes
+    for prevState in bestPreviousNodes[state]:
+        if prevState not in visited:
+            to_visit.add(prevState)
+
+print("Part 2", len(set([s.coord for s in visited])))
