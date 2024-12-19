@@ -7,5 +7,5 @@ _Will AI do better than me?_
 ```
             1111111111222222
    1234567890123456789012345
-   XXXXXXXXXXXXXXXX1X.......
+   XXXXXXXXXXXXXXXX1XX......
 ```
